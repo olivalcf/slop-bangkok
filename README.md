@@ -1,17 +1,60 @@
-# Slop New York
+# Slop Bangkok
 
-A New York City simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore Manhattan on foot, by car, by bicycle, or by helicopter.
+A playable Bangkok remix of [mrdoob's Slop New York](https://github.com/mrdoob/slop-newyork), built with three.js, WebGPURenderer, and TSL. Walk, drive a meter taxi, cycle, or fly a helicopter through central Bangkok.
 
-[Try it live](https://mrdoob.github.io/slop-newyork/)
+## Run locally
 
-## Make it your own
+No install or build step is required. Serve this directory over HTTP:
 
-Fork it, remix it, improve it, break it. Make games, animations, films, experiments, or something completely different. Use it as a starting point and take it wherever you want. Have fun!
+```sh
+python3 -m http.server 5173
+```
 
-Explore other cities and community remixes in [Slop Cities](https://github.com/zz85/slop-cities).
+Open <http://localhost:5173>. A current browser with WebGPU or WebGL 2 is required. The first visit downloads three.js and fonts and compiles shaders. Three.js is pinned to commit `fa57cf648fc36a9c5999f0076bfeea4960de50f6`.
 
-## License and data
+## Explore
 
-The project code is available under the [MIT License](LICENSE).
+- **WASD / arrow keys** move and steer. Drag to orbit; scroll or pinch to zoom.
+- **1–4** switch between walking, driving, cycling, and flying.
+- **Space / E** ascend in the helicopter; **Q / C** descend. Space jumps while walking.
+- **V / Shift+V** cycle cameras. **M** opens the searchable map. Click a street to teleport.
+- **N** toggles synthesized engine audio; **B** sounds the horn. **H** hides the HUD.
+- Touch joystick and action buttons appear on touch devices. Standard gamepads use the original control system.
 
-Geographic data: NYC Open Data and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Third-party data and dependencies retain their respective licenses.
+The teleport menu includes Mahanakhon, Wat Arun, the Grand Palace, Yaowarat, Lumphini Park, Siam Square, Baiyoke Tower II, ICONSIAM, and Asok. Scenic cameras provide landmark views. Speed and altitude use km/h and metres. Player positions are saved locally under a Bangkok-specific key.
+
+## Geography and scope
+
+The checked-in snapshot covers approximately **13.700–13.775° N, 100.475–100.585° E**, from Thonburi and the old town to Sukhumvit. It includes **11,295 road ways**, **87,953 mapped building outlines**, waterways, parks, and elevated rail spans, fetched from OpenStreetMap on 26 October 2026. World coordinates use metres, east = +x and north = −z, with an origin at Sala Daeng.
+
+Road alignments and building locations come from the snapshot. Buildings are simplified bounding volumes; missing heights and additional street-front buildings are procedural. Landmarks are stylized models. River widths are approximated from mapped centerlines, not surveyed bank geometry. The scene is an exploration prototype, not a navigation or engineering map.
+
+Traffic is decorative, follows mapped roads on the left, and loops along individual ways. It does not simulate intersections, traffic signals, routing, or collisions with the player. Elevated roads are rendered at ground level. Water does not have swimming or buoyancy physics. The inherited New York geography modules and data remain in the fork for reference but are not loaded by the Bangkok entry point.
+
+City geometry is split into spatial chunks and distant street detail is hidden. Rendering resolution is capped at 1,600 pixels wide; frame rate depends on the device and camera position.
+
+## Refresh the snapshot
+
+The generated `js/bangkok-geodata.js` is checked in, so browsing makes no requests to OSM servers. The raw download is ignored by Git.
+
+```sh
+# Bounded, cached map-API fallback when Overpass is unavailable:
+python3 tools/fetch-bangkok.py
+node tools/build-bangkok.mjs
+```
+
+Alternatively, use `tools/data/q_bangkok.overpassql` with an available Overpass endpoint, save its JSON to `tools/data/osm_bangkok.json`, and run the builder. The map-API fallback caches tiles in `/tmp/slop-bangkok-osm` and requests at most four tiles concurrently.
+
+## Verify
+
+```sh
+node --test tests/*.test.*
+```
+
+The suite covers the inherited controller/camera/vehicle systems and Bangkok projection, map lookup, and teleport arrivals. Browser checks should also cover all four modes, landmark teleporting, time presets, map search, and a mobile viewport.
+
+## Credits and license
+
+Original simulation by [mrdoob](https://github.com/mrdoob). Code is available under the [MIT License](LICENSE).
+
+Geographic data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the [Open Database License](https://opendatacommons.org/licenses/odbl/). The Bangkok snapshot is a derived OSM database distributed under ODbL. Original NYC Open Data and OSM data retain their respective licenses. Third-party dependencies and fonts retain their licenses.

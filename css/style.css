@@ -34,8 +34,8 @@
   --shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.2);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-  --font-sign: 'Overpass', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-sign: 'Noto Sans Thai', 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
 }
 
 * {
@@ -1440,3 +1440,15 @@ body.touch-enabled .pop-item { min-height: 44px; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Bangkok retains the original corner HUD and full-screen playable viewport. */
+:root { --taxi: #e9bd68; --taxi-ink: #242319; --sign-green: #235648; }
+.mta-bullet { font-size: 10px; letter-spacing: -0.5px; }
+.loader-bullet { font-size: 17px; }
+#hud-location { font-family: var(--font-sign); font-size: 13px; color: #f6e7c4; background: #254e40; padding: 7px 12px; border-radius: 5px; max-width: 360px; }
+#hud-controls-hint { font-size: 12px; color: #eee4d2; text-shadow: 0 1px 3px #202521; }
+.radar-attribution { position: absolute; bottom: 5px; right: 8px; color: #efe2c4; font-size: 9px; background: #222d2ccc; padding: 2px; text-decoration: none; }
+.map-attribution { color: var(--text-2); font-size: 11px; }
+#fullmap-canvas { touch-action: none; }
+#loading-status + button { margin: 18px auto 0; padding: 10px 18px; background: var(--taxi); color: var(--taxi-ink); border-radius: 6px; }
+@media (max-width: 700px) { #hud-location { max-width: 220px; font-size: 11px; } .brand-subtitle { font-size: 10px; } }
