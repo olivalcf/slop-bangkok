@@ -7,6 +7,7 @@ const CAMERA_PRESETS = [
   { id: 'chase',       name: '3rd-Person Chase',         category: 'follow', fov: 56 },
   { id: 'action',      name: 'Low-Angle Action',         category: 'follow', fov: 60 },
   { id: 'pov',         name: 'First-Person / Cockpit',   category: 'follow', fov: 68 },
+  { id: 'bts',         name: 'Nana · Sukhumvit & BTS',   category: 'scenic', fov: 58 },
   { id: 'centralPark', name: 'Lumphini Park',       category: 'scenic', fov: 52 },
   { id: 'fifthAve',    name: 'Silom & Mahanakhon',   category: 'scenic', fov: 48 },
   { id: 'timesSquare', name: 'Yaowarat Road',  category: 'scenic', fov: 58 },
@@ -253,6 +254,7 @@ class CameraSystem {
         break;
       }
 
+      case 'bts':
       case 'centralPark':
       case 'fifthAve':
       case 'timesSquare':
@@ -261,6 +263,7 @@ class CameraSystem {
       case 'bryantPark':
       case 'waterfront': {
         const views = {
+          bts: [[2197, 5.8, -1437], [2370, 12, -1310]],
           centralPark: [[780, 32, -280], [900, 5, -500]],
           fifthAve: [[-560, 12, 370], [-627, 170, 557]],
           timesSquare: [[-2480, 9, -1150], [-2650, 14, -1280]],

@@ -5,6 +5,8 @@
   way[natural=water];
   way[waterway=river];
   way[leisure=park];
-  way[railway=rail][bridge=yes];
+  way[railway~"^(rail|subway|light_rail)$"][bridge~"^(yes|viaduct)$"];
+  node[railway=station][network=BTS];
+  node[railway=station]["operator:en"~"BTSC"];
 );
 out tags geom;

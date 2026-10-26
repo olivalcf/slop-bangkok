@@ -671,3 +671,15 @@ test('player clearance respects altitude and permits a ground arrival under an a
   helicopter.position.y = 1;
   assert.notDeepEqual({ ...controller.teleportActiveTo(0, 0) }, { x: 0, z: 0 }, 'a helicopter parked at street level must be avoided');
 });
+
+test('switching modes renders only the active player actor', () => {
+  const { controller } = keyboardHarness();
+  const entity = () => ({ mesh: { visible: true }, helmet: { visible: true }, crowd: { meshes: [{ visible: true }] } });
+  controller.entities = { person: entity(), car: entity(), cyclist: entity(), helicopter: entity() };
+  controller.setMode('car');
+  assert.deepEqual(Object.values(controller.entities).map(e => e.mesh.visible), [false,true,false,false]);
+  assert.equal(controller.entities.person.crowd.meshes[0].visible,false);
+  controller.setMode('person');
+  assert.deepEqual(Object.values(controller.entities).map(e => e.mesh.visible), [true,false,false,false]);
+  assert.equal(controller.entities.person.crowd.meshes[0].visible,true);
+});

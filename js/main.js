@@ -7,9 +7,10 @@ import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { LightingSystem } from './lighting.js';
+import { BKK } from './bangkok-geodata.js';
 
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'slop-bangkok-player-v1';
+const STORAGE_KEY = 'slop-bangkok-player-v2';
 async function initApp() {
   $('loading-status').textContent = 'Starting the renderer…';
   const renderer = new THREE.WebGPURenderer({ antialias: true, reversedDepthBuffer: true, powerPreference: 'high-performance' });
@@ -35,10 +36,10 @@ async function initApp() {
     onCycleCamera: cycleCamera, onToggleMap: () => map.toggle(), onCloseMap: () => map.toggle(false)
   });
   // Save keys are city-specific so Manhattan coordinates cannot leak into Bangkok.
-  const start = LANDMARKS[0];
+  const start = BKK.stations.find(s => s.name === 'Nana') || LANDMARKS.find(l => l.id === 'asok');
   for (let i = 0; i < modes.length; i++) {
     controller.setMode(modes[i]);
-    const p = arrivalAt(start.x + 100 + i * 12, start.z + 100);
+    const p = arrivalAt(start.x - 130 + i * 12, start.z - 100);
     controller.teleportActiveTo(p.x, p.z, p.heading, modes[i] === 'helicopter' ? 110 : null);
   }
   try {

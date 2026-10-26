@@ -132,47 +132,32 @@ function createTaxiDoorDecalTexture() {
   c.width = 256;
   c.height = 128;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffbe14';
+  ctx.fillStyle = '#cf367b';
   ctx.fillRect(0, 0, 256, 128);
-  // Black T&LC circle emblem
-  ctx.fillStyle = '#111317';
-  ctx.beginPath();
-  ctx.arc(58, 64, 42, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ffbe14';
-  ctx.font = '900 32px Inter, Arial, sans-serif';
+  ctx.fillStyle = '#f0e4c7';
+  ctx.font = '600 30px "Noto Sans Thai", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('T', 58, 66);
-  // NYC TAXI typography & Fare Rate
-  ctx.fillStyle = '#111317';
-  ctx.textAlign = 'left';
-  ctx.font = '900 26px Inter, Arial, sans-serif';
-  ctx.fillText('TAXI METER', 112, 42);
-  ctx.font = '700 15px JetBrains Mono, monospace';
-  ctx.fillText('กรุงเทพมหานคร', 112, 68);
-  ctx.font = '600 13px Inter, Arial, sans-serif';
-  ctx.fillText('แท็กซี่มิเตอร์', 112, 90);
+  ctx.fillText('แท็กซี่มิเตอร์', 128, 44, 236);
+  ctx.font = '500 22px "Noto Sans Thai", sans-serif';
+  ctx.fillText('กรุงเทพมหานคร', 128, 83, 236);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
-function createNYLicensePlateTexture() {
+function createThaiLicensePlateTexture() {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#ffb81c';
   ctx.fillRect(0, 0, 256, 128);
-  ctx.fillStyle = '#0d2244';
-  ctx.fillRect(6, 6, 244, 24);
-  ctx.fillStyle = '#ffb81c';
-  ctx.font = '800 15px Inter, Arial, sans-serif';
+  ctx.fillStyle = '#252e2c';
+  ctx.font = '600 16px "Noto Sans Thai", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('THAILAND', 128, 23);
-  ctx.fillStyle = '#0d2244';
-  ctx.font = '900 48px JetBrains Mono, monospace';
+  ctx.fillText('รถยนต์รับจ้าง', 128, 23);
+  ctx.font = '600 48px "Noto Sans Thai", sans-serif';
   ctx.fillText('ทส 2569', 128, 82);
   ctx.font = '700 13px Inter, Arial, sans-serif';
   ctx.fillText('กรุงเทพมหานคร', 128, 114);
@@ -316,6 +301,12 @@ class ThirdPersonControllerManager {
   setMode(mode) {
     if (!this.entities[mode]) return;
     this.activeMode = mode;
+    for (const [key, entity] of Object.entries(this.entities)) {
+      const visible = key === mode;
+      if (entity.mesh) entity.mesh.visible = visible;
+      if (entity.helmet) entity.helmet.visible = visible;
+      for (const crowd of [entity.crowd, entity.riderCrowd]) for (const mesh of crowd?.meshes || []) mesh.visible = visible;
+    }
     const car = this.entities.car;
     if (mode !== 'car' && car?.carState) car.carState.value.x = car.carState.value.w = 0;
   }
@@ -379,7 +370,7 @@ class ThirdPersonControllerManager {
     const entity = this.getActiveEntity();
     // Conservative body cylinders, including the taxi's corners, bicycle wheels and helicopter tail/rotor.
     const body = { person: [0.48, 1.9], car: [2.4, 1.9], cyclist: [1.0, 1.9], helicopter: [6.2, 3.2] };
-    const others = Object.values(this.entities).filter(e => e !== entity).map(e => ({
+    const others = Object.values(this.entities).filter(e => e !== entity && e.mesh?.visible !== false).map(e => ({
       x: e.position.x, z: e.position.z, radius: body[e.type][0],
       bottom: e.position.y - (e.type === 'helicopter' ? 0.7 : 0), top: e.position.y + body[e.type][1]
     }));
@@ -477,7 +468,7 @@ class ThirdPersonControllerManager {
     root.add(chassisPivot);
 
     const spec = BODY_SPECS.taxi;
-    const taxiLoftMat = createLoftedCarMaterial(spec, 0xffbe14);
+    const taxiLoftMat = createLoftedCarMaterial(spec, 0xcf367b, 0xe3c136);
 
     // 1. 3D Lofted Taxi Body + Curved Windscreens + Crowned Roof + Side Mirrors + Roof Sign
     const carBodyGeo = buildCarGeometry(spec, false);
@@ -486,7 +477,7 @@ class ThirdPersonControllerManager {
     carBodyMesh.receiveShadow = true;
     chassisPivot.add(carBodyMesh);
 
-    // 2. Authentic NYC Taxi Side Door T&LC Medallion & Fare Tariff Emblem Decals, hugging the curved front doors
+    // Thai meter-taxi lettering follows the curved door skin.
     const doorDecalTex = createTaxiDoorDecalTexture();
     const doorDecalMat = new THREE.MeshStandardNodeMaterial({
       map: doorDecalTex,
@@ -502,14 +493,13 @@ class ThirdPersonControllerManager {
       chassisPivot.add(decal);
     }
 
-    // 3. High-Detail NY Empire Gold License Plates on the bumpers
-    const nyPlateTex = createNYLicensePlateTexture();
-    const nyPlateMat = new THREE.MeshStandardNodeMaterial({ map: nyPlateTex, roughness: 0.28 });
-    const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.02), nyPlateMat);
+    const plateTexture = createThaiLicensePlateTexture();
+    const plateMaterial = new THREE.MeshStandardNodeMaterial({ map: plateTexture, roughness: 0.28 });
+    const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.02), plateMaterial);
     rearPlate.position.set(0, spec.plates[1], spec.zRear - 0.006);
     chassisPivot.add(rearPlate);
 
-    const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.02), nyPlateMat);
+    const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.02), plateMaterial);
     frontPlate.position.set(0, spec.plates[0], spec.zFront + 0.006);
     chassisPivot.add(frontPlate);
 
@@ -1005,16 +995,7 @@ class ThirdPersonControllerManager {
 
     if (this.activeMode === 'person') {
       this.updatePerson(dt, elapsed);
-    } else {
-      // Keep the sidewalk pedestrian walking naturally when not actively controlled
-      const p = this.entities.person;
-      const walkSpeed = 1.48;
-      p.speed = walkSpeed;
-      p.position.x += Math.sin(p.heading) * walkSpeed * dt;
-      p.position.z += Math.cos(p.heading) * walkSpeed * dt;
-      if (p.position.z < -340) p.heading = 0;
-      else if (p.position.z > 340) p.heading = Math.PI;
-    }
+    } else this.entities.person.speed = 0;
 
     if (this.activeMode === 'car') {
       this.updateCar(dt, elapsed);

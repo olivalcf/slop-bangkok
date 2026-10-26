@@ -26,15 +26,19 @@ def tile(bounds):
     root = ET.parse(path).getroot()
     nodes = {n.attrib['id']: {'lat': float(n.attrib['lat']), 'lon': float(n.attrib['lon'])} for n in root.findall('node')}
     ways = []
+    for n in root.findall('node'):
+        tags = {t.attrib['k']: t.attrib['v'] for t in n.findall('tag')}
+        if tags.get('railway') == 'station' and (tags.get('network') == 'BTS' or 'BTSC' in tags.get('operator:en', '')):
+            ways.append({'type': 'node', 'id': int(n.attrib['id']), 'tags': tags, 'geometry': [nodes[n.attrib['id']]]})
     for w in root.findall('way'):
         tags = {t.attrib['k']: t.attrib['v'] for t in w.findall('tag')}
         if not (tags.get('highway') in ROADS or 'building' in tags or tags.get('natural') == 'water'
                 or tags.get('waterway') == 'river' or tags.get('leisure') == 'park'
-                or tags.get('railway') == 'rail' and tags.get('bridge') == 'yes'):
+                or tags.get('railway') in {'rail', 'subway', 'light_rail'} and tags.get('bridge') in {'yes', 'viaduct'}):
             continue
         refs = [n.attrib['ref'] for n in w.findall('nd')]
         if all(ref in nodes for ref in refs):
-            ways.append({'id': int(w.attrib['id']), 'tags': tags, 'geometry': [nodes[ref] for ref in refs]})
+            ways.append({'type': 'way', 'id': int(w.attrib['id']), 'tags': tags, 'geometry': [nodes[ref] for ref in refs]})
     return ways
 
 if __name__ == '__main__':
@@ -52,7 +56,7 @@ if __name__ == '__main__':
                 print(f'Retrying {bounds}: {error}', flush=True)
                 time.sleep(2)
                 result = tile(bounds)
-            ways.update((w['id'], w) for w in result)
+            ways.update(((w['type'], w['id']), w) for w in result)
             if i % 10 == 0: print(f'{i}/{len(tiles)} tiles, {len(ways)} ways', flush=True)
     out = pathlib.Path(__file__).parent / 'data/osm_bangkok.json'
     out.write_text(json.dumps({'osm3s': {'timestamp_osm_base': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, 'elements': list(ways.values())}, separators=(',', ':')))

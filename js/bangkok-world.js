@@ -2,7 +2,13 @@ import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BKK } from './bangkok-geodata.js';
 import { LANDMARKS, SEGMENTS, nearestRoad, pointInPolygon } from './bangkok-config.js';
-import { createCurtainWallMaterial, createPreWarBuildingMaterial, createFacadeBoxes, createRoadSurfaceMaterial, cityUniforms } from './tsl-materials.js';
+import { createCurtainWallMaterial, createFacadeBoxes, cityUniforms } from './tsl-materials.js';
+import { createShophouseMaterial, createBangkokRoadMaterial } from './bangkok-materials.js';
+import { createStreetscape } from './bangkok-streetscape.js';
+import { buildBangkokTransit } from './bangkok-transit.js';
+import { createBangkokTrafficVehicle } from './bangkok-vehicles.js';
+import { joinWays, nearestPathPoint } from './bangkok-paths.js';
+import { buildBangkokCrowd } from './bangkok-crowd.js';
 
 const seeded = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const mat = (color, roughness = 0.75, metalness = 0) => new THREE.MeshStandardNodeMaterial({ color, roughness, metalness });
@@ -13,9 +19,23 @@ export function buildBangkok(scene) {
   scene.add(root);
   const colliders = [], batches = new Map(), moving = [], nightMaterials = [];
   const staticChunks = [];
-  const concrete = mat(0xada99c), curb = mat(0xc8c1ae), gold = mat(0xcda346, 0.3, 0.65);
+  const concrete = mat(0xada99c), curb = mat(0x969c91), gold = mat(0xcda346, 0.3, 0.65);
   const ivory = mat(0xe9dfc4), roof = mat(0x9a3c2f), green = mat(0x3c6751), trunk = mat(0x75624b);
-  const asphalt = createRoadSurfaceMaterial();
+  green.side = THREE.DoubleSide;
+  const porcelainCanvas = document.createElement('canvas'); porcelainCanvas.width = porcelainCanvas.height = 256;
+  const pc = porcelainCanvas.getContext('2d'); pc.fillStyle = '#e5dfca'; pc.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 256; y += 32) for (let x = 0; x < 256; x += 32) {
+    pc.strokeStyle = '#c7c3a7'; pc.strokeRect(x, y, 32, 32);
+    pc.fillStyle = (x + y) % 64 ? '#78977b' : '#bda360';
+    for (let a = 0; a < 6; a++) {
+      pc.beginPath(); pc.ellipse(x + 16 + Math.cos(a * Math.PI / 3) * 5, y + 16 + Math.sin(a * Math.PI / 3) * 5, 3, 5, a * Math.PI / 3, 0, Math.PI * 2); pc.fill();
+    }
+    pc.fillStyle = '#bc8373'; pc.beginPath(); pc.arc(x + 16, y + 16, 2.5, 0, Math.PI * 2); pc.fill();
+  }
+  const porcelainTexture = new THREE.CanvasTexture(porcelainCanvas); porcelainTexture.colorSpace = THREE.SRGBColorSpace;
+  porcelainTexture.wrapS = porcelainTexture.wrapT = THREE.RepeatWrapping; porcelainTexture.repeat.set(6, 12);
+  const porcelain = new THREE.MeshStandardNodeMaterial({ map: porcelainTexture, roughness: 0.68, emissive: 0xffd7a0, emissiveIntensity: 0 });
+  const asphalt = createBangkokRoadMaterial();
   const waterMat = mat(0x294a37, 0.42, 0);
   const waveCanvas = document.createElement('canvas'); waveCanvas.width = waveCanvas.height = 128;
   const waveContext = waveCanvas.getContext('2d');
@@ -74,6 +94,7 @@ export function buildBangkok(scene) {
   }
 
   const low = [], high = [], occupied = new Map();
+  const streetscape = createStreetscape({ box, cylinder, batch, nightMaterials });
   const occupancyKey = (x, z) => `${Math.floor(x / 100)},${Math.floor(z / 100)}`;
   function overlaps(x, z, w, d) {
     for (let ix = Math.floor((x - w) / 100); ix <= Math.floor((x + w) / 100); ix++) {
@@ -92,6 +113,7 @@ export function buildBangkok(scene) {
     if (road && road.dist < road.road.width / 2 + Math.min(w, d) / 2 + 1.5) return;
     const item = { x, y: h / 2, z, w, h, d, ry, tone: seeded(seed) };
     (h > 45 ? high : low).push(item);
+    if (h <= 36) streetscape.detailBuilding(item, road, seed);
     const hx = (Math.abs(Math.cos(ry)) * w + Math.abs(Math.sin(ry)) * d) / 2;
     const hz = (Math.abs(Math.sin(ry)) * w + Math.abs(Math.cos(ry)) * d) / 2;
     colliders.push({ minX: x - hx, maxX: x + hx, minZ: z - hz, maxZ: z + hz, maxY: h,
@@ -104,12 +126,24 @@ export function buildBangkok(scene) {
   for (let i = 0; i < BKK.buildings.length; i++) {
     const b = BKK.buildings[i], pts = b.points;
     const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
-    const w = Math.max(...xs) - Math.min(...xs), d = Math.max(...zs) - Math.min(...zs);
+    let w = Math.max(...xs) - Math.min(...xs), d = Math.max(...zs) - Math.min(...zs);
     if (w < 3 || d < 3 || w > 160 || d > 160) continue;
-    const x = (Math.max(...xs) + Math.min(...xs)) / 2, z = (Math.max(...zs) + Math.min(...zs)) / 2;
-    const modern = x > -1400 && seeded(i) > 0.88;
-    const h = b.height || (modern ? 45 + seeded(i + 4) * 110 : 6 + Math.floor(seeded(i + 4) * 6) * 3);
-    addBuilding(x, z, w, d, h, 0, i);
+    let x = (Math.max(...xs) + Math.min(...xs)) / 2, z = (Math.max(...zs) + Math.min(...zs)) / 2;
+    let longest = 0, ry = 0;
+    for (let j = 1; j < pts.length; j++) {
+      const dx = pts[j][0] - pts[j - 1][0], dz = pts[j][1] - pts[j - 1][1], length = dx * dx + dz * dz;
+      if (length > longest) { longest = length; ry = Math.atan2(dx, dz); }
+    }
+    const cs = Math.cos(ry), sn = Math.sin(ry);
+    const local = pts.map(p => [(p[0] - x) * cs - (p[1] - z) * sn, (p[0] - x) * sn + (p[1] - z) * cs]);
+    const minX = Math.min(...local.map(p => p[0])), maxX = Math.max(...local.map(p => p[0]));
+    const minZ = Math.min(...local.map(p => p[1])), maxZ = Math.max(...local.map(p => p[1]));
+    x += (minX + maxX) / 2 * cs + (minZ + maxZ) / 2 * sn;
+    z += -(minX + maxX) / 2 * sn + (minZ + maxZ) / 2 * cs;
+    w = maxX - minX; d = maxZ - minZ;
+    const modern = x > -1400 && w * d > 550 && seeded(i) > 0.965;
+    const h = b.height || (modern ? 45 + seeded(i + 4) * 110 : 6.6 + Math.floor(seeded(i + 4) * 4) * 3.3);
+    addBuilding(x, z, w, d, h, ry, i);
   }
   // OSM footprints are incomplete in places. Fill road frontages with seeded
   // shophouses, leaving mapped parks, waterways, and existing footprints clear.
@@ -132,7 +166,7 @@ export function buildBangkok(scene) {
       addBuilding(x, z, w, d, modern ? 45 + seeded(seed + 7) * 130 : 9 + Math.floor(seeded(seed + 7) * 5) * 3.2, Math.atan2(s.ux, s.uz) + Math.PI / 2, seed);
     }
   }
-  const masonry = createPreWarBuildingMaterial({ stoneColor: 0xc8bba0, trimColor: 0xaaa089, windowRatioX: 0.65, boxLocal: true, cornerPier: 0.3 });
+  const masonry = createShophouseMaterial();
   function facadeChunks(boxes, material, tall) {
     const chunks = new Map();
     for (const b of boxes) {
@@ -151,9 +185,15 @@ export function buildBangkok(scene) {
 
   function palm(x, z, h = 12) {
     cylinder(x, h / 2, z, 0.17, 0.35, h, trunk, 5);
-    for (let j = 0; j < 6; j++) {
-      const a = j * Math.PI / 3;
-      const geo = new THREE.ConeGeometry(1.25, 6, 3).rotateZ(1.2).rotateY(a).translate(x + Math.cos(a) * 1.5, h - 0.4, z - Math.sin(a) * 1.5);
+    for (let j = 0; j < 9; j++) {
+      const a = j * Math.PI * 2 / 9, vertices = [], indices = [];
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8, r = t * 4.8, width = Math.sin(t * Math.PI) * 0.45;
+        for (const side of [-1, 1]) vertices.push(x + Math.cos(a) * r - Math.sin(a) * width * side, h + Math.sin(t * Math.PI) * 1.2 - t * t * 2.6, z + Math.sin(a) * r + Math.cos(a) * width * side);
+        if (k < 8) { const i = k * 2; indices.push(i, i + 2, i + 1, i + 1, i + 2, i + 3); }
+      }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(18 * 2), 2)); geo.setIndex(indices); geo.computeVertexNormals();
       batch(geo, green);
     }
   }
@@ -208,7 +248,7 @@ export function buildBangkok(scene) {
     const profile = [[0.44,0.17],[0.38,0.21],[0.39,0.26],[0.3,0.31],[0.31,0.36],[0.24,0.41],
       [0.24,0.49],[0.2,0.56],[0.18,0.62],[0.15,0.68],[0.13,0.74],[0.1,0.81],[0.065,0.88],[0,1]];
     const geo = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r * width, y * h)), 12);
-    batch(geo.translate(x, 0, z), ivory);
+    batch(geo.translate(x, 0, z), porcelain);
     // Porcelain bands, small niches, and the steep stairs break up the tower's silhouette.
     for (let tier = 0; tier < 9; tier++) {
       const y = h * (0.24 + tier * 0.065), radius = width * (0.36 - tier * 0.033);
@@ -227,10 +267,19 @@ export function buildBangkok(scene) {
     colliders.push({ minX: x - w * 0.43, maxX: x + w * 0.43, minZ: z - d * 0.43, maxZ: z + d * 0.43, maxY: h + 14 });
     box(x, h / 2, z, w * 0.85, h, d * 0.85, ivory);
     for (let tier = 0; tier < 3; tier++) {
-      const width = w * (1 - tier * 0.16);
-      const g = new THREE.CylinderGeometry(0, width * 0.74, 7, 4).rotateY(Math.PI / 4).scale(1, 1, d / w).translate(x, h + 3 + tier * 3.5, z);
-      batch(g, roof);
-      box(x, h + 7 + tier * 3.5, z, 0.7, 0.6, d * (0.8 - tier * 0.1), gold);
+      const width = w * (1.12 - tier * 0.15), depth = d * (1.1 - tier * 0.12), baseY = h + tier * 3.4;
+      const profile = new THREE.Shape();
+      profile.moveTo(-width / 2, 0.8); profile.quadraticCurveTo(-width * 0.32, -0.3, 0, 7);
+      profile.quadraticCurveTo(width * 0.32, -0.3, width / 2, 0.8); profile.lineTo(width / 2, 0.45);
+      profile.quadraticCurveTo(width * 0.32, -0.65, 0, 6.65); profile.quadraticCurveTo(-width * 0.32, -0.65, -width / 2, 0.45); profile.closePath();
+      batch(new THREE.ExtrudeGeometry(profile, { depth, bevelEnabled: false, curveSegments: 8 }).translate(x, baseY, z - depth / 2), roof);
+      box(x, baseY + 7, z, 0.45, 0.35, depth, gold);
+      for (const end of [-1, 1]) {
+        const points = [new THREE.Vector3(-width / 2, 0.8, 0), new THREE.Vector3(-width * 0.24, 1.8, 0), new THREE.Vector3(0, 7, 0), new THREE.Vector3(width * 0.24, 1.8, 0), new THREE.Vector3(width / 2, 0.8, 0)];
+        batch(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 16, 0.13, 5, false).translate(x, baseY, z + end * depth / 2), gold);
+        const chofa = new THREE.QuadraticBezierCurve3(new THREE.Vector3(x, baseY + 7, z + end * depth / 2), new THREE.Vector3(x, baseY + 10, z + end * (depth / 2 + 1)), new THREE.Vector3(x, baseY + 12, z + end * (depth / 2 + 2)));
+        batch(new THREE.TubeGeometry(chofa, 10, 0.14, 5, false), gold);
+      }
     }
     for (const side of [-1, 1]) cylinder(x, h + 12, z + side * d * 0.4, 0, 0.8, 8, gold, 5);
   }
@@ -280,32 +329,28 @@ export function buildBangkok(scene) {
     }
   }
 
-  // Elevated rail follows mapped BTS geometry. Trains shuttle along each mapped
-  // span; they are scenic actors rather than a timetable simulation.
-  for (const points of BKK.rail) for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    line(a, b, 8, 11, concrete, 1.2);
-    if (len > 25) cylinder((a[0] + b[0]) / 2, 5, (a[1] + b[1]) / 2, 0.8, 1, 10, concrete);
-  }
+  const transit = buildBangkokTransit({ root, box, cylinder, batch, sign, colliders });
+  const streetscapeInfo = streetscape.buildRoadDetails();
+  console.info('[bangkok streetscape]', streetscapeInfo);
+  const crowd = buildBangkokCrowd(root);
 
-  const trafficColors = [0xd05291, 0x31a45f, 0xe8c443, 0xd8dce0, 0x48515e, 0xe9e6dc];
-  const carGeo = new THREE.BoxGeometry(1.75, 1.15, 4.2);
-  const majorRoads = BKK.roads.filter(r => r.major && r.points.length > 2);
-  for (let i = 0; i < 140; i++) {
-    const road = majorRoads[i % majorRoads.length];
+  const majorRoads = joinWays(BKK.roads.filter(r => r.major), 1, true).filter(p => p.total > 80);
+  const featuredRoads = majorRoads.filter(p => /^(Sukhumvit Road|Yaowarat Road|Silom Road|Si Lom Road|Charoen Krung Road)$/.test(p.name) && p.total > 140);
+  const nana = BKK.stations.find(s => s.name === 'Nana');
+  const nanaRoads = majorRoads.filter(p => p.name === 'Sukhumvit Road' && p.total > 500 && nearestPathPoint(p, nana.x, nana.z).distance < 35);
+  for (let i = 0; i < 300; i++) {
+    const local = i < 60 && nanaRoads.length;
+    const road = local ? nanaRoads[i % nanaRoads.length] : i < 150 ? featuredRoads[i % featuredRoads.length] : majorRoads[Math.floor(seeded(i + 8) * majorRoads.length)];
     if (!road) break;
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(carGeo, mat(trafficColors[i % trafficColors.length], 0.3, 0.4)); body.position.y = 0.75; group.add(body);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 2), mat(0x29424a, 0.15, 0.6)); cabin.position.set(0, 1.45, 0); group.add(cabin);
-    if (i % 4 === 0) {
-      const taxi = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.25, 0.35), ivory); taxi.position.set(0, 1.9, 0); group.add(taxi);
-    }
+    const group = createBangkokTrafficVehicle(i);
     root.add(group);
     const lengths = [], total = road.points.slice(1).reduce((sum, p, j) => {
       const prev = road.points[j]; const len = Math.hypot(p[0] - prev[0], p[1] - prev[1]); lengths.push(len); return sum + len;
     }, 0);
     if (total < 10) continue;
-    moving.push({ group, road, lengths, total, distance: seeded(i + 31) * total, speed: 5 + seeded(i + 42) * 6,
+    const center = local ? nearestPathPoint(road, nana.x, nana.z).along : 0;
+    const rangeStart = local ? Math.max(0, center - 550) : 0, rangeEnd = local ? Math.min(total, center + 550) : total;
+    moving.push({ group, road, lengths, total, rangeStart, rangeEnd, distance: rangeStart + seeded(i + 31) * (rangeEnd - rangeStart), speed: 3 + seeded(i + 42) * 6,
       direction: road.oneway === -1 ? -1 : road.oneway === 1 ? 1 : i % 2 ? -1 : 1 });
   }
   for (const [material, geometries] of batches) {
@@ -322,7 +367,7 @@ export function buildBangkok(scene) {
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, material);
       mesh.receiveShadow = material !== waterMat;
-      mesh.castShadow = [ivory, gold, roof, green, trunk].includes(material);
+      mesh.castShadow = [ivory, porcelain, gold, roof, green, trunk].includes(material);
       root.add(mesh);
       if (merged.boundingSphere === null) merged.computeBoundingSphere();
       const p = merged.boundingSphere;
@@ -337,8 +382,11 @@ export function buildBangkok(scene) {
       const distance = active.y > 50 ? 3000 : 1800;
       for (const chunk of staticChunks) chunk.mesh.visible = chunk.tall || Math.hypot(chunk.x - active.x, chunk.z - active.z) < distance;
       waveTexture.offset.set(elapsed * 0.0005, elapsed * 0.0003);
+      transit.update(elapsed);
+      crowd.update(dt, active);
       for (const car of moving) {
-        car.distance = (car.distance + car.speed * dt * car.direction + car.total) % car.total;
+        const span = car.rangeEnd - car.rangeStart;
+        car.distance = car.rangeStart + (car.distance - car.rangeStart + car.speed * dt * car.direction + span) % span;
         let t = car.distance, i = 0;
         while (i < car.lengths.length - 1 && t > car.lengths[i]) t -= car.lengths[i++];
         const a = car.road.points[i], b = car.road.points[i + 1], len = car.lengths[i] || 1;
@@ -351,6 +399,7 @@ export function buildBangkok(scene) {
         car.group.visible = Math.hypot(x - active.x, z - active.z) > 7;
       }
       const glow = cityUniforms.uInteriorGlow.value;
+      porcelain.emissiveIntensity = Math.max(0, glow - 0.8) * 0.3;
       for (const material of nightMaterials) material.emissiveIntensity = glow * 0.7;
     }
   };
